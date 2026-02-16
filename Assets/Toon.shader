@@ -10,16 +10,81 @@ Shader "Custom/Toon" {
 
         // 影の付き方を制御するテクスチャを指定する変数
         _RampTex ("Ramp", 2D) = "white" {}
+
+        // アウトラインの色を指定する変数
+        _OutlineColor ("Outline Color", Color) = (0,0,0,1)
+
+        // アウトラインの太さを指定する変数
+        _OutlineWidth ("Outline Width", Range(0.0, 0.1)) = 0.005
     }
 
     // GPUに送るコードを記述するブロック
     // デバイス性能によって分ける為複数用意できる
     SubShader {
-        // 描画の順番を指定するタグ（不透明）
+        // 不透明オブジェクトとして描画するためのタグ
         Tags { "RenderType" = "Opaque" }
         // シェーダの切り替えのためのウエイトを設定（200は標準）
         LOD 200
     
+        Pass {
+            Name "OUTLINE"
+            
+            // カメラに向いている面ではなく、背を向けている面を描画する
+            Cull Front
+
+            CGPROGRAM
+            
+            // 頂点シェーダとフラグメントシェーダに対応する関数名を宣言
+            #pragma vertex vert
+            #pragma fragment frag
+            
+            // Unityの関数群を使うためのインクルード
+            #include "UnityCG.cginc"
+
+            // プロパティの変数を受け取る
+            fixed4 _OutlineColor;
+            float _OutlineWidth;
+
+            // 頂点シェーダに与えるデータの構造体
+            // : でGPUにこの変数の意味（セマンティクス）、ラベルを示す
+            struct appdata {
+                float4 vertex : POSITION;
+                float3 normal : NORMAL;
+            };
+
+            // vertex to fragment 頂点シェーダからフラグメントシェーダに渡すデータの構造体
+            // 保守性の観点から構造体でまとめておく
+            struct v2f {
+                float4 pos : SV_POSITION;
+            };
+
+            /// <summary>
+            /// 頂点を法線方向に少し伸ばす関数
+            /// </summary>
+            /// <param name="v">頂点データ</param>
+            /// <returns>少し伸ばした頂点の位置が格納された構造体</returns>
+            v2f vert (appdata v) {
+                v2f o;
+                
+                // 頂点の位置を法線の向きに太さ分だけ移動させる
+                float3 expandedPos = v.vertex.xyz + v.normal * _OutlineWidth;
+
+                // 膨らませた位置を、3D空間から2D画面の座標に変換して格納
+                // 4次元ベクトルにすることで行列計算を可能にする
+                // o.posには変換された頂点の画面上の位置と前後関係、透視投影の情報が入る
+                o.pos = UnityObjectToClipPos(float4(expandedPos, 1.0));
+                
+                return o;
+            }
+
+            // 色を決める関数
+            fixed4 frag (v2f i) : SV_Target {
+                // 設定した輪郭線の色を返す
+                return _OutlineColor;
+            }
+            ENDCG
+        }
+
         // ここからが本質的な処理
         CGPROGRAM
 
@@ -39,7 +104,7 @@ Shader "Custom/Toon" {
         sampler2D _RampTex;
 
         // surfの引数を受け取るための構造体
-        // 必要最低限の情報を入れた構造体を定義
+        // 保守性の観点から構造体でまとめておく
         struct Input {
             float2 uv_MainTex;
         };
@@ -91,5 +156,6 @@ Shader "Custom/Toon" {
         }
         ENDCG
     }
+    // 上記のSubShaderが動かない場合に使うShaderを指定
     FallBack "Diffuse"
 }
