@@ -4,12 +4,16 @@ Shader "Custom/Toon" {
         // 色を指定する変数
         _Color ("Color", Color) = (1,1,1,1)
 
-        // テクスチャを指定する変数
-        // 変数名(ラベル名, 型) = デフォルト値の白画像, {}はテクスチャ変数宣言のお作法
-        _MainTex ("Albedo (RGB)", 2D) = "white" {}
-
-        // 影の付き方を制御するテクスチャを指定する変数
-        _RampTex ("Ramp", 2D) = "white" {}
+        // ハイライトの色と閾値
+        _HighColor ("Highlight Color", Color) = (1, 1, 1, 1)
+        _HighThreshold ("Highlight Threshold", Range(0, 1)) = 0.8
+        
+        // 通常の色と閾値
+        _NormalColor ("Normal Color", Color) = (1, 1, 1, 1)
+        
+        // 影の色と閾値
+        _LowColor ("Shadow Color", Color) = (0.5, 0.5, 0.5, 1)
+        _LowThreshold ("Shadow Threshold", Range(0, 1)) = 0.5
     }
 
     // GPUに送るコードを記述するブロック
@@ -18,7 +22,7 @@ Shader "Custom/Toon" {
         // 不透明オブジェクトとして描画するためのタグ
         Tags { "RenderType" = "Opaque" }
         // シェーダの切り替えのためのウエイトを設定（200は標準）
-        LOD 200
+        LOD 100
 
         // ここからが本質的な処理
         CGPROGRAM
@@ -35,13 +39,16 @@ Shader "Custom/Toon" {
         // Propertiesで宣言したエディタ用変数を計算に使うためC言語に合わせ再宣言
         // fixed, fixed2, fixed3... はC#で言う所の float, Vector2(x, y), Vector3(r, g, b)...
         fixed4 _Color;
-        sampler2D _MainTex;
-        sampler2D _RampTex;
+        fixed4 _NormalColor;
+        fixed4 _HighColor;
+        half _HighThreshold;
+        fixed4 _LowColor;
+        half _LowThreshold;
 
         // surfの引数を受け取るための構造体
         // 保守性の観点から構造体でまとめておく
         struct Input {
-            float2 uv_MainTex;
+            float dummy;
         };
 
         // 独自のライティング関数を定義
@@ -58,11 +65,14 @@ Shader "Custom/Toon" {
             // 法線と光源方向との内積を計算し、範囲を -1.0 ~ 1.0 から 0.0 ~ 1.0 に変換
             half d = dot(s.Normal, lightDir) * 0.5 + 0.5;
 
-            // tex2D(テクスチャ, 座標) でテクスチャから色を取る
-            // fixed2(u, v)でUV座標（常に u, v ともに [0, 1] の範囲) を指定
-            // _RampTexがカラーランプの役割を果たしdの位置に応じた色を返す(v座標は今回鑑みず中心の位置をとる)
-            // .rgbで返り値のfixed4からRGB成分だけを抜き取る
-            fixed3 ramp = tex2D(_RampTex, fixed2(d, 0.5)).rgb;
+            fixed3 ramp;
+            if (d >= _HighThreshold) {
+                ramp = _HighColor.rgb;
+            } else if (d >= _LowThreshold) {
+                ramp = _NormalColor.rgb;
+            } else {
+                ramp = _LowColor.rgb;
+            }
 
             // 最終的な色を計算
             // s.Albedoにはsurf関数のo.Albedoが既に渡されている
@@ -81,8 +91,8 @@ Shader "Custom/Toon" {
         /// <param name="o">結果を格納する構造体（Albedo, Normal, Alphaなどが入る）</param>
         /// <returns></returns>
         void surf (Input IN, inout SurfaceOutput o) {
-            // 設定した画像の色と、エディタで指定した色を掛け合わせる
-            fixed4 c = tex2D (_MainTex, IN.uv_MainTex) * _Color;
+            // 単色を指定する
+            fixed4 c = _Color;
 
             // 結果格納
             // アルベドにRGB成分、アルファにA成分を入れる
